@@ -3,7 +3,7 @@
  * Syncs with backend API
  */
 
-const API_BASE_URL = 'https://f1d8ff33fcd5b2f9-43-106-60-238.serveousercontent.com/api';
+const API_BASE_URL = 'https://brochures-especially-fleet-named.trycloudflare.com/api';
 const API_KEY = 'fulmen-secret-key-2026';
 
 // Data storage with API sync
