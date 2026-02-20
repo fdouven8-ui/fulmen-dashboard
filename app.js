@@ -3,9 +3,7 @@
  * Syncs with backend API
  */
 
-const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-    ? 'http://localhost:3456/api' 
-    : 'http://10.184.173.121:3456/api';
+const API_BASE_URL = 'https://4aa5cd93a68b3ae2-43-106-60-238.serveousercontent.com/api';
 const API_KEY = 'fulmen-secret-key-2026';
 
 // Data storage with API sync
