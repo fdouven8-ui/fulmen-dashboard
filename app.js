@@ -1,120 +1,97 @@
 /**
  * FulmenAgent Command Center - Main Application
- * Local-only, zero external dependencies
+ * Syncs with backend API
  */
 
-// Data storage (in-memory with localStorage backup if available)
+const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+    ? 'http://localhost:3456/api' 
+    : 'http://10.184.173.121:3456/api';
+const API_KEY = 'fulmen-secret-key-2026';
+
+// Data storage with API sync
 const DataStore = {
     tasks: [],
     logs: [],
     activities: [],
     
-    load() {
+    async apiCall(endpoint, method = 'GET', data = null) {
         try {
-            const saved = localStorage.getItem('fulmen-data');
-            if (saved) {
-                const data = JSON.parse(saved);
-                this.tasks = data.tasks || [];
-                this.logs = data.logs || [];
-                this.activities = data.activities || [];
+            const options = {
+                method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-API-Key': API_KEY
+                }
+            };
+            if (data) {
+                options.body = JSON.stringify(data);
             }
-        } catch (e) {
-            console.log('localStorage not available, using memory only');
+            
+            const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
+            if (!response.ok) {
+                console.error('API error:', response.status);
+                return null;
+            }
+            return await response.json();
+        } catch (err) {
+            console.error('API call failed:', err);
+            return null;
         }
-        this.loadFromFiles();
     },
     
-    save() {
-        try {
-            localStorage.setItem('fulmen-data', JSON.stringify({
-                tasks: this.tasks,
-                logs: this.logs,
-                activities: this.activities
+    async load() {
+        // Load from API
+        const tasks = await this.apiCall('/tasks');
+        if (tasks) {
+            this.tasks = tasks.map(t => ({
+                id: t.id,
+                text: t.text,
+                status: t.status,
+                priority: t.priority,
+                created: t.created_at
             }));
-        } catch (e) {
-            // Silent fail - memory-only mode
         }
-    },
-    
-    // Attempt to load from local markdown files
-    async loadFromFiles() {
-        // This would require a file server, so we'll simulate with defaults
+        
+        const activity = await this.apiCall('/activity');
+        if (activity) {
+            this.activities = activity.map(a => ({
+                time: a.created_at,
+                action: `${a.action}: ${a.details || ''}`
+            }));
+        }
+        
+        // Fallback: add default tasks if empty
         if (this.tasks.length === 0) {
-            this.tasks = [
-                { id: 1, text: 'Build Command Center Dashboard', status: 'completed', priority: 'high', created: new Date().toISOString() },
-                { id: 2, text: 'Clone FulmenAgent repository', status: 'in-progress', priority: 'high', created: new Date().toISOString() },
-                { id: 3, text: 'Research AI agent monetization strategies', status: 'backlog', priority: 'high', created: new Date().toISOString() },
-                { id: 4, text: 'Set up FulmenAgent Hub server', status: 'backlog', priority: 'medium', created: new Date().toISOString() },
-                { id: 5, text: 'Create business model canvas', status: 'backlog', priority: 'medium', created: new Date().toISOString() }
-            ];
+            await this.addTask('Build Command Center Dashboard', 'high');
+            await this.addTask('Clone FulmenAgent repository', 'high');
+            await this.addTask('Research AI agent monetization strategies', 'high');
+            await this.addTask('Set up FulmenAgent Hub server', 'medium');
+            await this.addTask('Create business model canvas', 'medium');
         }
         
-        if (this.activities.length === 0) {
-            this.activities = [
-                { time: new Date().toISOString(), action: 'Dashboard created and initialized' }
-            ];
-        }
-        
-        this.save();
         this.renderAll();
     },
     
-    addTask(text, priority) {
-        const task = {
-            id: Date.now(),
-            text,
-            priority,
-            status: 'backlog',
-            created: new Date().toISOString()
-        };
-        this.tasks.push(task);
-        this.save();
-        this.renderAll();
-        this.addActivity(`Added task: ${text}`);
-    },
-    
-    completeTask(id) {
-        const task = this.tasks.find(t => t.id === id);
-        if (task) {
-            task.status = 'completed';
-            task.completed = new Date().toISOString();
-            this.save();
-            this.renderAll();
-            this.addActivity(`Completed task: ${task.text}`);
+    async addTask(text, priority) {
+        const result = await this.apiCall('/tasks', 'POST', { text, priority });
+        if (result) {
+            await this.load(); // Reload to get updated list
         }
     },
     
-    startTask(id) {
-        const task = this.tasks.find(t => t.id === id);
-        if (task) {
-            task.status = 'in-progress';
-            this.save();
-            this.renderAll();
-            this.addActivity(`Started task: ${task.text}`);
-        }
+    async completeTask(id) {
+        await this.apiCall(`/tasks/${id}`, 'PATCH', { status: 'completed' });
+        await this.load();
     },
     
-    deleteTask(id) {
-        const task = this.tasks.find(t => t.id === id);
-        if (task) {
-            this.tasks = this.tasks.filter(t => t.id !== id);
-            this.save();
-            this.renderAll();
-            this.addActivity(`Deleted task: ${task.text}`);
-        }
+    async startTask(id) {
+        await this.apiCall(`/tasks/${id}`, 'PATCH', { status: 'in-progress' });
+        await this.load();
     },
     
-    addActivity(action) {
-        this.activities.unshift({
-            time: new Date().toISOString(),
-            action
-        });
-        // Keep only last 50 activities
-        if (this.activities.length > 50) {
-            this.activities = this.activities.slice(0, 50);
-        }
-        this.save();
-        this.renderTimeline();
+    async deleteTask(id) {
+        await this.apiCall(`/tasks/${id}`, 'DELETE');
+        await this.load();
     },
     
     renderAll() {
@@ -131,7 +108,7 @@ const DataStore = {
             return;
         }
         
-        container.innerHTML = this.activities.map(act => `
+        container.innerHTML = this.activities.slice(0, 20).map(act => `
             <div class="timeline-item">
                 <div class="time">${formatTime(act.time)}</div>
                 <div class="action">${escapeHtml(act.action)}</div>
@@ -183,24 +160,24 @@ function renderTasks() {
     
     // Attach event listeners
     document.querySelectorAll('.task-btn.complete').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+        btn.addEventListener('click', async (e) => {
             const id = parseInt(e.target.dataset.id);
-            DataStore.completeTask(id);
+            await DataStore.completeTask(id);
         });
     });
     
     document.querySelectorAll('.task-btn.start').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+        btn.addEventListener('click', async (e) => {
             const id = parseInt(e.target.dataset.id);
-            DataStore.startTask(id);
+            await DataStore.startTask(id);
         });
     });
     
     document.querySelectorAll('.task-btn.delete').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+        btn.addEventListener('click', async (e) => {
             const id = parseInt(e.target.dataset.id);
             if (confirm('Delete this task?')) {
-                DataStore.deleteTask(id);
+                await DataStore.deleteTask(id);
             }
         });
     });
@@ -281,8 +258,8 @@ function updateClock() {
 }
 
 // Initialize
-function init() {
-    DataStore.load();
+async function init() {
+    await DataStore.load();
     initTabs();
     loadMission();
     
@@ -292,10 +269,10 @@ function init() {
     const priority = document.getElementById('new-task-priority');
     
     if (addBtn && input) {
-        addBtn.addEventListener('click', () => {
+        addBtn.addEventListener('click', async () => {
             const text = input.value.trim();
             if (text) {
-                DataStore.addTask(text, priority.value);
+                await DataStore.addTask(text, priority.value);
                 input.value = '';
             }
         });
